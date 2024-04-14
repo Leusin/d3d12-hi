@@ -4,14 +4,14 @@
 // $(SolutionDir)..\Libraries\D3D12\Include
 #include "d3dx12.h"
 
-D3d12Hi::D3d12Hi(UINT width, UINT height, std::wstring name)
+D3D12Hi::D3D12Hi(UINT width, UINT height, std::wstring name)
 	: DXSample(width, height, name),
 	m_frameIndex(0),
 	m_rtvDescriptorSize(0)
 {
 }
 
-void D3d12Hi::OnInit()
+void D3D12Hi::OnInit()
 {
 	LoadPipeline();
 	LoadAssets();
@@ -19,12 +19,12 @@ void D3d12Hi::OnInit()
 
 
 // 프레임 기반 값(frame-based values) 업데이트.
-void D3d12Hi::OnUpdate()
+void D3D12Hi::OnUpdate()
 {
 }
 
 // 씬 랜더
-void D3d12Hi::OnRender()
+void D3D12Hi::OnRender()
 {
 	// 씬을 렌더링하기 위한 모든 명령(commands)을 명령 리스트(commands list)에 기록합니다.
 	PopulateCommandList();
@@ -39,7 +39,7 @@ void D3d12Hi::OnRender()
 	WaitForPreviousFrame();
 }
 
-void D3d12Hi::OnDestroy()
+void D3D12Hi::OnDestroy()
 {
 	// 소멸자에 의해 정리될 자원에 GPU가 더 이상 참조하지 않게 함.
 	WaitForPreviousFrame();
@@ -48,7 +48,7 @@ void D3d12Hi::OnDestroy()
 }
 
 // 랜더링 파이프라인이 의존하는 것 로드
-void D3d12Hi::LoadPipeline()
+void D3D12Hi::LoadPipeline()
 {
 	UINT dxgiFactoryFlags = 0;
 
@@ -154,7 +154,7 @@ void D3d12Hi::LoadPipeline()
 	ThrowIfFailed(m_device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&m_commandAllocator)));
 }
 
-void D3d12Hi::LoadAssets()
+void D3D12Hi::LoadAssets()
 {
 	// 커맨드 라인(cl) 생성
 	ThrowIfFailed(m_device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, m_commandAllocator.Get(), nullptr, IID_PPV_ARGS(&m_commandList)));
@@ -177,7 +177,7 @@ void D3d12Hi::LoadAssets()
 	}
 }
 
-void D3d12Hi::PopulateCommandList()
+void D3D12Hi::PopulateCommandList()
 {
 	// 명령 리스트 할당자(Command list allocators)는 연관된 명령 리스트(cl)가 
 	// GPU에서 실행을 완료한 경우에만 재설정될 수 있다.
@@ -190,7 +190,12 @@ void D3d12Hi::PopulateCommandList()
 	ThrowIfFailed(m_commandList->Reset(m_commandAllocator.Get(), m_pipelineState.Get()));
 
 	// 백 버퍼가 렌더 타겟으로 사용될 것을 나타냄.
-	m_commandList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(m_renderTargets[m_frameIndex].Get(), D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_RENDER_TARGET));
+	m_commandList->ResourceBarrier(
+		1, 
+		&CD3DX12_RESOURCE_BARRIER::Transition(
+			m_renderTargets[m_frameIndex].Get(), 
+			D3D12_RESOURCE_STATE_PRESENT, 
+			D3D12_RESOURCE_STATE_RENDER_TARGET));
 
 	CD3DX12_CPU_DESCRIPTOR_HANDLE rtvHandle(m_rtvHeap->GetCPUDescriptorHandleForHeapStart(), m_frameIndex, m_rtvDescriptorSize);
 
@@ -199,12 +204,17 @@ void D3d12Hi::PopulateCommandList()
 	m_commandList->ClearRenderTargetView(rtvHandle, clearColor, 0, nullptr);
 
 	// 이제 백 버퍼가 제시(present)에 사용될 것을 나타냄.
-	m_commandList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(m_renderTargets[m_frameIndex].Get(), D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PRESENT));
+	m_commandList->ResourceBarrier(
+		1, 
+		&CD3DX12_RESOURCE_BARRIER::Transition(
+			m_renderTargets[m_frameIndex].Get(), 
+			D3D12_RESOURCE_STATE_RENDER_TARGET, 
+			D3D12_RESOURCE_STATE_PRESENT));
 
 	ThrowIfFailed(m_commandList->Close());
 }
 
-void D3d12Hi::WaitForPreviousFrame()
+void D3D12Hi::WaitForPreviousFrame()
 {
 	// 이 코드는 단순성을 위해 다음과 같이 구현되었다. 프레임이 완료될 때까지 GPU의 렌더링 작업 완료를 기다리는 것이 
 	// 최선의 방법이 아니다.

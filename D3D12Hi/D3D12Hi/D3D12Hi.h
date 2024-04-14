@@ -9,10 +9,10 @@
 // 객체를 아직 파괴해서는 안 되므로 GPU 리소스 수명을 고려해야 한다.
 using Microsoft::WRL::ComPtr;
 
-class D3d12Hi : public DXSample
+class D3D12Hi : public DXSample
 {
 public:
-	D3d12Hi(UINT width, UINT height, std::wstring name);
+	D3D12Hi(UINT width, UINT height, std::wstring name);
 
 	void OnInit() override;
 	void OnUpdate() override;

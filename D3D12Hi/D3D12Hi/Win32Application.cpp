@@ -34,8 +34,8 @@ int Win32Application::Run(DXSample* pSample, HINSTANCE hInstance, int nCmdShow)
 		CW_USEDEFAULT,
 		windowRect.right - windowRect.left,
 		windowRect.bottom - windowRect.top,
-		nullptr,        // We have no parent window.
-		nullptr,        // We aren't using menus.
+		nullptr,        // 부모 윈도우 사용하지 않음
+		nullptr,        // 메뉴 사용하지 않음
 		hInstance,
 		pSample);
 

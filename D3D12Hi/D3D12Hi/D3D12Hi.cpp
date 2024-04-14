@@ -1,13 +1,14 @@
 #include "D3D12Hi.h"
 
-// 불러오지 않는다면 추가 포함 디렉터리에 다음 경로 추가
-// $(SolutionDir)..\Libraries\D3D12\Include
-#include "d3dx12.h"
+/*
+*/
 
 D3D12Hi::D3D12Hi(UINT width, UINT height, std::wstring name)
-	: DXSample(width, height, name),
-	m_frameIndex(0),
-	m_rtvDescriptorSize(0)
+	: DXSample(width, height, name)
+	, m_frameIndex(0)
+	, m_viewport(0.0f, 0.0f, static_cast<float>(width), static_cast<float>(height)) // *
+	, m_scissorRect(0, 0, static_cast<LONG>(width), static_cast<LONG>(height)) // *
+	, m_rtvDescriptorSize(0)
 {
 }
 
@@ -16,7 +17,6 @@ void D3D12Hi::OnInit()
 	LoadPipeline();
 	LoadAssets();
 }
-
 
 // 프레임 기반 값(frame-based values) 업데이트.
 void D3D12Hi::OnUpdate()
@@ -112,7 +112,7 @@ void D3D12Hi::LoadPipeline()
 
 	ComPtr<IDXGISwapChain1> swapChain;
 	ThrowIfFailed(factory->CreateSwapChainForHwnd(
-		m_commandQueue.Get(),        // 스왑 체인은 큐를 필요하다. 그래야 강제로 플러시(force a flush; 현재 처리 중인 작업을 즉시 완료하고, 해당 작업이 완료되었음을 보장하는 동기화 작업)할 수 있다.
+		m_commandQueue.Get(), // 스왑 체인은 큐를 필요하다. 그래야 강제로 플러시(force a flush; 현재 처리 중인 작업을 즉시 완료하고, 해당 작업이 완료되었음을 보장하는 동기화 작업)할 수 있다.
 		Win32Application::GetHwnd(),
 		&swapChainDesc,
 		nullptr,
@@ -156,12 +156,99 @@ void D3D12Hi::LoadPipeline()
 
 void D3D12Hi::LoadAssets()
 {
+	// 빈 루트 시그니처(empty root signature) 생성*
+	{
+		CD3DX12_ROOT_SIGNATURE_DESC rootSignatureDesc;
+		rootSignatureDesc.Init(0, nullptr, 0, nullptr, D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT);
+
+		ComPtr<ID3DBlob> signature;
+		ComPtr<ID3DBlob> error;
+		ThrowIfFailed(D3D12SerializeRootSignature(&rootSignatureDesc, D3D_ROOT_SIGNATURE_VERSION_1, &signature, &error));
+		ThrowIfFailed(m_device->CreateRootSignature(0, signature->GetBufferPointer(), signature->GetBufferSize(), IID_PPV_ARGS(&m_rootSignature)));
+	}
+
+	// 셰이더를 컴파일하고 로드하는 파이프라인 상태(state) 생성.*
+	{
+		ComPtr<ID3DBlob> vertexShader;
+		ComPtr<ID3DBlob> pixelShader;
+
+#if defined(_DEBUG)
+		// 그래픽스 디버깅 도구 활성화 플래그.
+		UINT compileFlags = D3DCOMPILE_DEBUG | D3DCOMPILE_SKIP_OPTIMIZATION;
+#else
+		UINT compileFlags = 0;
+#endif
+
+		ThrowIfFailed(D3DCompileFromFile(GetAssetFullPath(L"shaders.hlsl").c_str(), nullptr, nullptr, "VSMain", "vs_5_0", compileFlags, 0, &vertexShader, nullptr));
+		ThrowIfFailed(D3DCompileFromFile(GetAssetFullPath(L"shaders.hlsl").c_str(), nullptr, nullptr, "PSMain", "ps_5_0", compileFlags, 0, &pixelShader, nullptr));
+
+		// 버텍스 인풋 레이아웃(vertex input layout) 정의.
+		D3D12_INPUT_ELEMENT_DESC inputElementDescs[] =
+		{
+			{ "POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 },
+			{ "COLOR", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, 12, D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA, 0 }
+		};
+
+		// 그래픽 파이프라인 상태 객체(PSO) 서술 및 생성.
+		D3D12_GRAPHICS_PIPELINE_STATE_DESC psoDesc = {};
+		psoDesc.InputLayout = { inputElementDescs, _countof(inputElementDescs) };
+		psoDesc.pRootSignature = m_rootSignature.Get();
+		psoDesc.VS = CD3DX12_SHADER_BYTECODE(vertexShader.Get());
+		psoDesc.PS = CD3DX12_SHADER_BYTECODE(pixelShader.Get());
+		psoDesc.RasterizerState = CD3DX12_RASTERIZER_DESC(D3D12_DEFAULT);
+		psoDesc.BlendState = CD3DX12_BLEND_DESC(D3D12_DEFAULT);
+		psoDesc.DepthStencilState.DepthEnable = FALSE;
+		psoDesc.DepthStencilState.StencilEnable = FALSE;
+		psoDesc.SampleMask = UINT_MAX;
+		psoDesc.PrimitiveTopologyType = D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;
+		psoDesc.NumRenderTargets = 1;
+		psoDesc.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;
+		psoDesc.SampleDesc.Count = 1;
+		ThrowIfFailed(m_device->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(&m_pipelineState)));
+	}
+
 	// 커맨드 라인(cl) 생성
 	ThrowIfFailed(m_device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, m_commandAllocator.Get(), nullptr, IID_PPV_ARGS(&m_commandList)));
 
 	// 커맨드 라인(cl)은 기록 상태를 생상하지만, 이 아직 기록할 게 없다.
 	// 메인 루프는 닫혀 있다고 예상하고 커멘드 라인을 닫는다.
 	ThrowIfFailed(m_commandList->Close());
+
+	// 버텍스 버퍼 생성.*
+	{
+		// 삼각형을 위한 지오메트리 정의.
+		Vertex triangleVertices[] =
+		{
+			{ { 0.0f, 0.25f * m_aspectRatio, 0.0f }, { 0.867f, 0.341f, 0.275f, 1.0f } },
+			{ { 0.25f, -0.25f * m_aspectRatio, 0.0f }, { 1.0f, 0.769f, 0.439f, 1.0f } },
+			{ { -0.25f, -0.25f * m_aspectRatio, 0.0f }, { 0.545f, 0.196f, 0.173f, 1.0f } }
+		};
+
+		const UINT vertexBufferSize = sizeof(triangleVertices);
+
+		// 참고: 정적 데이터를 전달하기 위해 업로드 힙을 사용하는 것은 권장되지 
+		// 않음. 이 코드에서는 실제로 전송해야 할 버텍스가 매우 적고 코드가 
+		// 간단하기 때문에 업로드 힙을 사용한다.
+		ThrowIfFailed(m_device->CreateCommittedResource(
+			&CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD),
+			D3D12_HEAP_FLAG_NONE,
+			&CD3DX12_RESOURCE_DESC::Buffer(vertexBufferSize),
+			D3D12_RESOURCE_STATE_GENERIC_READ,
+			nullptr,
+			IID_PPV_ARGS(&m_vertexBuffer)));
+
+		// 삼각형 데이터를 버텍스 버퍼로 복사.
+		UINT8* pVertexDataBegin;
+		CD3DX12_RANGE readRange(0, 0); // CPU에서 이 리소스를 읽지 않음.
+		ThrowIfFailed(m_vertexBuffer->Map(0, &readRange, reinterpret_cast<void**>(&pVertexDataBegin)));
+		memcpy(pVertexDataBegin, triangleVertices, sizeof(triangleVertices));
+		m_vertexBuffer->Unmap(0, nullptr);
+
+		// 버텍스 버퍼 뷰 초기화.
+		m_vertexBufferView.BufferLocation = m_vertexBuffer->GetGPUVirtualAddress();
+		m_vertexBufferView.StrideInBytes = sizeof(Vertex);
+		m_vertexBufferView.SizeInBytes = vertexBufferSize;
+	}
 
 	// 동기화(synchronization) 관련 오브젝트 생성.
 	{
@@ -174,11 +261,18 @@ void D3D12Hi::LoadAssets()
 		{
 			ThrowIfFailed(HRESULT_FROM_WIN32(GetLastError()));
 		}
+
+		// 명령 리스트가 실행될 때까지 기다림. 메인 루프에서는 같은 
+		// 명령 리스트를 재사용하지만, 해당 예제는 계속하기 전에 
+		// 설정이 완료될 때까지 기다림.*
+		WaitForPreviousFrame();
 	}
 }
 
 void D3D12Hi::PopulateCommandList()
 {
+	/*
+	*/
 	// 명령 리스트 할당자(Command list allocators)는 연관된 명령 리스트(cl)가 
 	// GPU에서 실행을 완료한 경우에만 재설정될 수 있다.
 	// 앱은 GPU 실행 진행 상황을 결정하기 위해 펜스(fences)를 사용해야 합니다.
@@ -189,26 +283,37 @@ void D3D12Hi::PopulateCommandList()
 	// 해야 한다.
 	ThrowIfFailed(m_commandList->Reset(m_commandAllocator.Get(), m_pipelineState.Get()));
 
+	// 필요한 상태(state) 설정.*
+	m_commandList->SetGraphicsRootSignature(m_rootSignature.Get());
+	m_commandList->RSSetViewports(1, &m_viewport);
+	m_commandList->RSSetScissorRects(1, &m_scissorRect);
+
 	// 백 버퍼가 렌더 타겟으로 사용될 것을 나타냄.
 	m_commandList->ResourceBarrier(
-		1, 
+		1,
 		&CD3DX12_RESOURCE_BARRIER::Transition(
-			m_renderTargets[m_frameIndex].Get(), 
-			D3D12_RESOURCE_STATE_PRESENT, 
+			m_renderTargets[m_frameIndex].Get(),
+			D3D12_RESOURCE_STATE_PRESENT,
 			D3D12_RESOURCE_STATE_RENDER_TARGET));
 
 	CD3DX12_CPU_DESCRIPTOR_HANDLE rtvHandle(m_rtvHeap->GetCPUDescriptorHandleForHeapStart(), m_frameIndex, m_rtvDescriptorSize);
+	// *
+	m_commandList->OMSetRenderTargets(1, &rtvHandle, FALSE, nullptr);
 
 	// 명령 기록(Record commands).
-	const float clearColor[] = { 0.0f, 0.2f, 0.4f, 1.0f };
+	const float clearColor[] = { 0.278f, 0.576f, 0.686f, 1.f };
 	m_commandList->ClearRenderTargetView(rtvHandle, clearColor, 0, nullptr);
+	// *
+	m_commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+	m_commandList->IASetVertexBuffers(0, 1, &m_vertexBufferView);
+	m_commandList->DrawInstanced(3, 1, 0, 0);
 
 	// 이제 백 버퍼가 제시(present)에 사용될 것을 나타냄.
 	m_commandList->ResourceBarrier(
-		1, 
+		1,
 		&CD3DX12_RESOURCE_BARRIER::Transition(
-			m_renderTargets[m_frameIndex].Get(), 
-			D3D12_RESOURCE_STATE_RENDER_TARGET, 
+			m_renderTargets[m_frameIndex].Get(),
+			D3D12_RESOURCE_STATE_RENDER_TARGET,
 			D3D12_RESOURCE_STATE_PRESENT));
 
 	ThrowIfFailed(m_commandList->Close());

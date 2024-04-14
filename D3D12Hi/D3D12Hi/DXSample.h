@@ -37,19 +37,19 @@ protected:
 
 	void SetCustomWindowText(LPCWSTR text);
 
-	// Viewport dimensions.
+	// 뷰 포트 차원.
 	UINT m_width;
 	UINT m_height;
 	float m_aspectRatio;
 
-	// Adapter info.
+	// 어뎁터 정보.
 	bool m_useWarpDevice;
 
 private:
-	// Root assets path.
+	// 에셋의 기본 경로.
 	std::wstring m_assetsPath;
 
-	// Window title.
+	// 윈도우 제목.
 	std::wstring m_title;
 };
 

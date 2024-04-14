@@ -21,14 +21,14 @@ DXSample::~DXSample()
 {
 }
 
-// Helper function for resolving the full path of assets.
+// 에셋의 절대 경로를 만들어주는 헬퍼 함수.
 std::wstring DXSample::GetAssetFullPath(LPCWSTR assetName)
 {
 	return m_assetsPath + assetName;
 }
 
-// Helper function for acquiring the first available hardware adapter that supports Direct3D 12.
-// If no such adapter can be found, *ppAdapter will be set to nullptr.
+// Direct3D 12를 지원하는 첫 번째 사용 가능한 하드웨어 어댑터를 얻기 위한 헬퍼 함수.
+// 이와 같은 어댑터를 찾을 수 없는 경우, *ppAdapter는 nullptr로 설정된다.
 _Use_decl_annotations_
 void DXSample::GetHardwareAdapter(
 	IDXGIFactory1* pFactory,
@@ -55,13 +55,13 @@ void DXSample::GetHardwareAdapter(
 
 			if (desc.Flags & DXGI_ADAPTER_FLAG_SOFTWARE)
 			{
-				// Don't select the Basic Render Driver adapter.
-				// If you want a software adapter, pass in "/warp" on the command line.
+				// 기본 렌더 드라이버 어댑터를 선택하지 않음.
+				// 소프트웨어 어댑터를 원하면 명령줄에 "/warp"
 				continue;
 			}
 
-			// Check to see whether the adapter supports Direct3D 12, but don't create the
-			// actual device yet.
+			// 어댑터가 Direct3D 12를 지원하는지 확인하나 실제로 
+			// 장치를 아직 생성하지 않음.
 			if (SUCCEEDED(D3D12CreateDevice(adapter.Get(), D3D_FEATURE_LEVEL_11_0, _uuidof(ID3D12Device), nullptr)))
 			{
 				break;
@@ -78,13 +78,13 @@ void DXSample::GetHardwareAdapter(
 
 			if (desc.Flags & DXGI_ADAPTER_FLAG_SOFTWARE)
 			{
-				// Don't select the Basic Render Driver adapter.
-				// If you want a software adapter, pass in "/warp" on the command line.
+				// 기본 렌더 드라이버 어댑터를 선택하지 않음.
+				// 소프트웨어 어댑터를 원하면 명령줄에 "/warp"
 				continue;
 			}
 
-			// Check to see whether the adapter supports Direct3D 12, but don't create the
-			// actual device yet.
+			// 어댑터가 Direct3D 12를 지원하는지 확인하나 실제로 
+			// 장치를 아직 생성하지 않음.
 			if (SUCCEEDED(D3D12CreateDevice(adapter.Get(), D3D_FEATURE_LEVEL_11_0, _uuidof(ID3D12Device), nullptr)))
 			{
 				break;
@@ -95,14 +95,14 @@ void DXSample::GetHardwareAdapter(
 	*ppAdapter = adapter.Detach();
 }
 
-// Helper function for setting the window's title text.
+// 윈도우 타이틀을 세팅하는 헬퍼 함수.
 void DXSample::SetCustomWindowText(LPCWSTR text)
 {
 	std::wstring windowText = m_title + L": " + text;
 	SetWindowText(Win32Application::GetHwnd(), windowText.c_str());
 }
 
-// Helper function for parsing any supplied command line args.
+// 커맨드라인 인자를 파싱하는 헬퍼 함수
 _Use_decl_annotations_
 void DXSample::ParseCommandLineArgs(WCHAR* argv[], int argc)
 {

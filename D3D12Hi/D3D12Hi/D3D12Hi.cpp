@@ -1,8 +1,5 @@
 #include "D3D12Hi.h"
 
-/*
-*/
-
 D3D12Hi::D3D12Hi(UINT width, UINT height, std::wstring name)
 	: DXSample(width, height, name)
 	, m_frameIndex(0)
@@ -160,6 +157,7 @@ void D3D12Hi::LoadPipeline()
 	}
 
 	ThrowIfFailed(m_device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&m_commandAllocator)));
+	ThrowIfFailed(m_device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_BUNDLE, IID_PPV_ARGS(&m_bundleAllocator)));
 }
 
 void D3D12Hi::LoadAssets()
@@ -349,6 +347,16 @@ void D3D12Hi::LoadAssets()
 		m_device->CreateShaderResourceView(m_texture.Get(), &srvDesc, m_srvHeap->GetCPUDescriptorHandleForHeapStart());
 	}
 
+	// 번들 생성 및 기록(record),
+	{
+		ThrowIfFailed(m_device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_BUNDLE, m_bundleAllocator.Get(), m_pipelineState.Get(), IID_PPV_ARGS(&m_bundle)));
+		m_bundle->SetGraphicsRootSignature(m_rootSignature.Get());
+		m_bundle->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+		m_bundle->IASetVertexBuffers(0, 1, &m_vertexBufferView);
+		m_bundle->DrawInstanced(3, 1, 0, 0);
+		ThrowIfFailed(m_bundle->Close());
+	}
+
 	// 커멘드 리스트를 닫고, 초기 GPU 설정 시작을 위해 실행.
 	ThrowIfFailed(m_commandList->Close());
 	ID3D12CommandList* ppCommandLists[] = { m_commandList.Get() };
@@ -424,7 +432,7 @@ void D3D12Hi::PopulateCommandList()
 	// 해야 한다.
 	ThrowIfFailed(m_commandList->Reset(m_commandAllocator.Get(), m_pipelineState.Get()));
 
-	// 필요한 상태(state) 설정.*
+	// 필요한 상태(state) 설정.
 	m_commandList->SetGraphicsRootSignature(m_rootSignature.Get());
 
 	ID3D12DescriptorHeap* ppHeaps[] = { m_srvHeap.Get() };
@@ -443,15 +451,18 @@ void D3D12Hi::PopulateCommandList()
 			D3D12_RESOURCE_STATE_RENDER_TARGET));
 
 	CD3DX12_CPU_DESCRIPTOR_HANDLE rtvHandle(m_rtvHeap->GetCPUDescriptorHandleForHeapStart(), m_frameIndex, m_rtvDescriptorSize);
-	// *
+	
 	m_commandList->OMSetRenderTargets(1, &rtvHandle, FALSE, nullptr);
 
 	// 명령 기록(Record commands).
 	const float clearColor[] = { 0.278f, 0.576f, 0.686f, 1.f };
 	m_commandList->ClearRenderTargetView(rtvHandle, clearColor, 0, nullptr);
-	m_commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-	m_commandList->IASetVertexBuffers(0, 1, &m_vertexBufferView);
-	m_commandList->DrawInstanced(3, 1, 0, 0);
+
+	// 번들에 저장된 커맨드 실행
+	m_commandList->ExecuteBundle(m_bundle.Get());
+	//m_commandList->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+	//m_commandList->IASetVertexBuffers(0, 1, &m_vertexBufferView);
+	//m_commandList->DrawInstanced(3, 1, 0, 0);
 
 	// 이제 백 버퍼가 제시(present)에 사용될 것을 나타냄.
 	m_commandList->ResourceBarrier(

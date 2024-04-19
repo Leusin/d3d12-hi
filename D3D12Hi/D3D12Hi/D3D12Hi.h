@@ -32,12 +32,18 @@ private:
 	static const UINT TextureHeight = 256;
 	static const UINT TexturePixelSize = 4; // 텍스처의 픽셀에 사용될 바이트 수
 
-
 	struct Vertex
 	{
 		XMFLOAT3 position;
-		XMFLOAT2 uv; //*XMFLOAT4 color;
+		XMFLOAT2 uv;
 	};
+
+	struct SceneConstantBuffer
+	{
+		XMFLOAT4 offset;
+		float padding[60]; // 상수 버퍼가 256바이트 정렬되도록 패딩한다.
+	};
+	static_assert((sizeof(SceneConstantBuffer) % 256) == 0, "상수 버퍼 크기는 256바이트 정렬이어야 합니다.");
 
 	// 파이프라인 오브젝트.
 	CD3DX12_VIEWPORT m_viewport;
@@ -46,20 +52,23 @@ private:
 	ComPtr<ID3D12Device> m_device;
 	ComPtr<ID3D12Resource> m_renderTargets[FrameCount];
 	ComPtr<ID3D12CommandAllocator> m_commandAllocator;
-	ComPtr<ID3D12CommandAllocator> m_bundleAllocator; //*
+	ComPtr<ID3D12CommandAllocator> m_bundleAllocator;
 	ComPtr<ID3D12CommandQueue> m_commandQueue;
 	ComPtr<ID3D12RootSignature> m_rootSignature; 
 	ComPtr<ID3D12DescriptorHeap> m_rtvHeap;
 	ComPtr<ID3D12DescriptorHeap> m_srvHeap;
 	ComPtr<ID3D12PipelineState> m_pipelineState;
 	ComPtr<ID3D12GraphicsCommandList> m_commandList;
-	ComPtr<ID3D12GraphicsCommandList> m_bundle; //*
+	ComPtr<ID3D12GraphicsCommandList> m_bundle;
 	UINT m_rtvDescriptorSize;
 
 	// 앱 리소스.
 	ComPtr<ID3D12Resource> m_vertexBuffer;
 	D3D12_VERTEX_BUFFER_VIEW m_vertexBufferView;
 	ComPtr<ID3D12Resource> m_texture;
+	ComPtr<ID3D12Resource> m_constantBuffer; //*
+	SceneConstantBuffer m_constantBufferData; //*
+	UINT8* m_pCbvDataBegin; //*
 
 	// 동기화(Synchronization) 오브젝트
 	UINT m_frameIndex;

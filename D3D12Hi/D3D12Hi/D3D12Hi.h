@@ -28,14 +28,11 @@ public:
 
 private:
 	static const UINT FrameCount = 2;
-	static const UINT TextureWidth = 256;
-	static const UINT TextureHeight = 256;
-	static const UINT TexturePixelSize = 4; // 텍스처의 픽셀에 사용될 바이트 수
 
 	struct Vertex
 	{
 		XMFLOAT3 position;
-		XMFLOAT2 uv;
+		XMFLOAT4 color;
 	};
 
 	struct SceneConstantBuffer
@@ -52,20 +49,17 @@ private:
 	ComPtr<ID3D12Device> m_device;
 	ComPtr<ID3D12Resource> m_renderTargets[FrameCount];
 	ComPtr<ID3D12CommandAllocator> m_commandAllocator;
-	ComPtr<ID3D12CommandAllocator> m_bundleAllocator;
 	ComPtr<ID3D12CommandQueue> m_commandQueue;
 	ComPtr<ID3D12RootSignature> m_rootSignature; 
 	ComPtr<ID3D12DescriptorHeap> m_rtvHeap;
-	ComPtr<ID3D12DescriptorHeap> m_srvHeap;
+	ComPtr<ID3D12DescriptorHeap> m_cbvHeap; //*
 	ComPtr<ID3D12PipelineState> m_pipelineState;
 	ComPtr<ID3D12GraphicsCommandList> m_commandList;
-	ComPtr<ID3D12GraphicsCommandList> m_bundle;
 	UINT m_rtvDescriptorSize;
 
 	// 앱 리소스.
 	ComPtr<ID3D12Resource> m_vertexBuffer;
 	D3D12_VERTEX_BUFFER_VIEW m_vertexBufferView;
-	ComPtr<ID3D12Resource> m_texture;
 	ComPtr<ID3D12Resource> m_constantBuffer; //*
 	SceneConstantBuffer m_constantBufferData; //*
 	UINT8* m_pCbvDataBegin; //*
@@ -78,7 +72,6 @@ private:
 
 	void LoadPipeline();
 	void LoadAssets();
-	std::vector<UINT8> GenerateTextureData();
 	void PopulateCommandList();
 	void WaitForPreviousFrame();
 };

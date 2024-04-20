@@ -5,6 +5,7 @@ D3D12Hi::D3D12Hi(UINT width, UINT height, std::wstring name)
 	, m_frameIndex(0)
 	, m_viewport(0.0f, 0.0f, static_cast<float>(width), static_cast<float>(height)) // *
 	, m_scissorRect(0, 0, static_cast<LONG>(width), static_cast<LONG>(height)) // *
+	, m_fenceValues{}
 	, m_rtvDescriptorSize(0)
 	, m_constantBufferData{}
 {
@@ -43,13 +44,15 @@ void D3D12Hi::OnRender()
 	// 프레임 제시(present).
 	ThrowIfFailed(m_swapChain->Present(1, 0));
 
-	WaitForPreviousFrame();
+	//WaitForPreviousFrame();
+	MoveToNextFrame();
 }
 
 void D3D12Hi::OnDestroy()
 {
 	// 소멸자에 의해 정리될 자원에 GPU가 더 이상 참조하지 않게 함.
-	WaitForPreviousFrame();
+	//WaitForPreviousFrame();
+	WaitForGpu();
 
 	CloseHandle(m_fenceEvent);
 }
@@ -86,7 +89,7 @@ void D3D12Hi::LoadPipeline()
 			warpAdapter.Get(),
 			D3D_FEATURE_LEVEL_11_0,
 			IID_PPV_ARGS(&m_device)
-			));
+		));
 	}
 	else
 	{
@@ -97,7 +100,7 @@ void D3D12Hi::LoadPipeline()
 			hardwareAdapter.Get(),
 			D3D_FEATURE_LEVEL_11_0,
 			IID_PPV_ARGS(&m_device)
-			));
+		));
 	}
 
 	// commend queue 서술 및 생성
@@ -125,7 +128,7 @@ void D3D12Hi::LoadPipeline()
 		nullptr,
 		nullptr,
 		&swapChain
-		));
+	));
 
 	// 현재 샘플은 풀스크린 변환을 지원해주지 않는다.
 	ThrowIfFailed(factory->MakeWindowAssociation(Win32Application::GetHwnd(), DXGI_MWA_NO_ALT_ENTER));
@@ -164,10 +167,10 @@ void D3D12Hi::LoadPipeline()
 			ThrowIfFailed(m_swapChain->GetBuffer(n, IID_PPV_ARGS(&m_renderTargets[n])));
 			m_device->CreateRenderTargetView(m_renderTargets[n].Get(), nullptr, rtvHandle);
 			rtvHandle.Offset(1, m_rtvDescriptorSize);
+			
+			ThrowIfFailed(m_device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&m_commandAllocators[n])));
 		}
 	}
-
-	ThrowIfFailed(m_device->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&m_commandAllocator)));
 }
 
 void D3D12Hi::LoadAssets()
@@ -250,7 +253,7 @@ void D3D12Hi::LoadAssets()
 	}
 
 	// 커맨드 라인(cl) 생성
-	ThrowIfFailed(m_device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, m_commandAllocator.Get(), nullptr, IID_PPV_ARGS(&m_commandList)));
+	ThrowIfFailed(m_device->CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, m_commandAllocators[m_frameIndex].Get(), m_pipelineState.Get(), IID_PPV_ARGS(&m_commandList)));
 
 	ThrowIfFailed(m_commandList->Close());
 
@@ -318,7 +321,8 @@ void D3D12Hi::LoadAssets()
 	// 동기화(synchronization) 관련 오브젝트 생성 및 GPU에 에셋이 업로드 될 때까지 기다림.
 	{
 		ThrowIfFailed(m_device->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&m_fence)));
-		m_fenceValue = 1;
+		//m_fenceValue = 1;
+		m_fenceValues[m_frameIndex]++;
 
 		// 프레임 동기화에 사용할 이벤트 핸들을 생성.
 		m_fenceEvent = CreateEvent(nullptr, FALSE, FALSE, nullptr);
@@ -329,8 +333,9 @@ void D3D12Hi::LoadAssets()
 
 		// 명령 리스트가 실행될 때까지 기다림. 메인 루프에서는 같은 
 		// 명령 리스트를 재사용하지만, 해당 예제는 계속하기 전에 
-		// 설정이 완료될 때까지 기다림.*
-		WaitForPreviousFrame();
+		// 설정이 완료될 때까지 기다림.
+		//WaitForPreviousFrame();
+		WaitForGpu();
 	}
 }
 
@@ -339,12 +344,12 @@ void D3D12Hi::PopulateCommandList()
 	// 명령 리스트 할당자(Command list allocators)는 연관된 명령 리스트(cl)가 
 	// GPU에서 실행을 완료한 경우에만 재설정될 수 있다. 따라서 
 	// 앱은 GPU 실행 진행 상황을 결정하기 위해 펜스(fences)를 사용해야 한다.
-	ThrowIfFailed(m_commandAllocator->Reset());
+	ThrowIfFailed(m_commandAllocators[m_frameIndex]->Reset());
 
 	// 하지만, 특정 명령 리스트(cl)에 대해 ExecuteCommandList()가 호출되면 
 	// 해당 명령 리스트는 언제든지 재설정할 수 있으며, 재기록(re-recording) 
 	// 해야 한다.
-	ThrowIfFailed(m_commandList->Reset(m_commandAllocator.Get(), m_pipelineState.Get()));
+	ThrowIfFailed(m_commandList->Reset(m_commandAllocators[m_frameIndex].Get(), m_pipelineState.Get()));
 
 	// 필요한 상태(state) 설정.
 	m_commandList->SetGraphicsRootSignature(m_rootSignature.Get());
@@ -385,22 +390,57 @@ void D3D12Hi::PopulateCommandList()
 	ThrowIfFailed(m_commandList->Close());
 }
 
-void D3D12Hi::WaitForPreviousFrame()
+//void D3D12Hi::WaitForPreviousFrame()
+//{
+//	// 이 코드는 단순성을 위해 다음과 같이 구현되었다. 프레임이 완료될 때까지 GPU의 렌더링 작업 완료를 기다리는 것이 
+//	// 최선의 방법이 아니다.
+//
+//	// 시그널과 펜스 값을 증가.
+//	const UINT64 fence = m_fenceValue;
+//	ThrowIfFailed(m_commandQueue->Signal(m_fence.Get(), fence));
+//	m_fenceValue++;
+//
+//	// 이전 프레임이 완료될 때까지 기다립니다.
+//	if (m_fence->GetCompletedValue() < fence)
+//	{
+//		ThrowIfFailed(m_fence->SetEventOnCompletion(fence, m_fenceEvent));
+//		WaitForSingleObject(m_fenceEvent, INFINITE);
+//	}
+//
+//	m_frameIndex = m_swapChain->GetCurrentBackBufferIndex();
+//}
+
+// 다음 프레임 렌더 준비.
+void D3D12Hi::MoveToNextFrame()
 {
-	// 이 코드는 단순성을 위해 다음과 같이 구현되었다. 프레임이 완료될 때까지 GPU의 렌더링 작업 완료를 기다리는 것이 
-	// 최선의 방법이 아니다.
+	// 큐에서 singnal 명령 예약.
+	const UINT64 currentFenceValue = m_fenceValues[m_frameIndex];
+	ThrowIfFailed(m_commandQueue->Signal(m_fence.Get(), currentFenceValue));
 
-	// 시그널과 펜스 값을 증가.
-	const UINT64 fence = m_fenceValue;
-	ThrowIfFailed(m_commandQueue->Signal(m_fence.Get(), fence));
-	m_fenceValue++;
+	// 프레임 업데이트 인덱스.
+	m_frameIndex = m_swapChain->GetCurrentBackBufferIndex();
 
-	// 이전 프레임이 완료될 때까지 기다립니다.
-	if (m_fence->GetCompletedValue() < fence)
+	// 다음 프레임이 렌더될 준비가 안됬다면, 준비될 때까지 기다림.
+	if (m_fence->GetCompletedValue() < m_fenceValues[m_frameIndex])
 	{
-		ThrowIfFailed(m_fence->SetEventOnCompletion(fence, m_fenceEvent));
-		WaitForSingleObject(m_fenceEvent, INFINITE);
+		ThrowIfFailed(m_fence->SetEventOnCompletion(m_fenceValues[m_frameIndex], m_fenceEvent));
+		WaitForSingleObjectEx(m_fenceEvent, INFINITE, FALSE);
 	}
 
-	m_frameIndex = m_swapChain->GetCurrentBackBufferIndex();
+	// 다음 프레임 fence 값 세팅.
+	m_fenceValues[m_frameIndex] = currentFenceValue + 1;
+}
+
+// 보류 중인 GPU 작업이 끝날 때까지 기다림.
+void D3D12Hi::WaitForGpu()
+{
+	// 큐에서 singnal 명령 예약.
+	ThrowIfFailed(m_commandQueue->Signal(m_fence.Get(), m_fenceValues[m_frameIndex]));
+
+	// fence 가 처리 될 때까지 기다림.
+	ThrowIfFailed(m_fence->SetEventOnCompletion(m_fenceValues[m_frameIndex], m_fenceEvent));
+	WaitForSingleObjectEx(m_fenceEvent, INFINITE, FALSE);
+
+	// 현재 프레임의 fence 값 증가.
+	m_fenceValues[m_frameIndex]++;
 }
